@@ -151,7 +151,17 @@ func (d *DB) String() string {
 
 // QueryIP looks up the network information for a given IP address.
 func (d *DB) QueryIP(addr net.IP) *Network {
-	found := d.inner.Search(addr)
+	return d.queryImpl(addr, 0)
+}
+
+// QueryIPNet looks up the network information for a given IP network.
+func (d *DB) QueryIPNet(ipNet *net.IPNet) *Network {
+	clampBits, _ := ipNet.Mask.Size()
+	return d.queryImpl(ipNet.IP.Mask(ipNet.Mask), clampBits)
+}
+
+func (d *DB) queryImpl(addr net.IP, clampBits int) *Network {
+	found := d.inner.Search(addr, clampBits)
 	if found != nil {
 		return &Network{
 			CountryCode: found.CountryCode.String(),
@@ -161,11 +171,6 @@ func (d *DB) QueryIP(addr net.IP) *Network {
 	}
 
 	return nil
-}
-
-// QueryIPNet looks up the network information for a given IP network.
-func (d *DB) QueryIPNet(ipNet *net.IPNet) *Network {
-	return d.QueryIP(ipNet.IP.Mask(ipNet.Mask))
 }
 
 // Country queries the full country name from a ISO 3166-1 alpha-2 country

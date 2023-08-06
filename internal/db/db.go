@@ -206,12 +206,12 @@ func (db *DB) DebugGetDataErrors() []string {
 	return ret
 }
 
-func (db *DB) Search(addr net.IP) *Network {
-	_, found := db.searchImpl(addr)
+func (db *DB) Search(addr net.IP, clampBits int) *Network {
+	_, found := db.searchImpl(addr, clampBits)
 	return found
 }
 
-func (db *DB) searchImpl(addr net.IP) (*NetworkNode, *Network) {
+func (db *DB) searchImpl(addr net.IP, clampBits int) (*NetworkNode, *Network) {
 	var (
 		ip   net.IP
 		node *NetworkNode
@@ -231,6 +231,7 @@ func (db *DB) searchImpl(addr net.IP) (*NetworkNode, *Network) {
 
 	// Decompose the address into bits, most significant to least
 	// significant.
+	var n int
 searchLoop:
 	for _, b := range ip {
 		for i := 0; i < 8; i++ {
@@ -254,6 +255,11 @@ searchLoop:
 			node = next
 			if node.Network != nil {
 				found = node.Network
+			}
+
+			n++
+			if clampBits > 0 && n >= clampBits {
+				break
 			}
 		}
 	}
@@ -290,7 +296,7 @@ func New(raw []byte, noFix bool) (*DB, error) {
 
 	// Cache the root node of all of the IPv6 mapped IPv4 addresses.
 	v4PrefixAddr := net.IP{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff}
-	db.v4Root, _ = db.searchImpl(v4PrefixAddr)
+	db.v4Root, _ = db.searchImpl(v4PrefixAddr, 0)
 
 	return db, nil
 }

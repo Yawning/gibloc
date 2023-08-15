@@ -1,6 +1,6 @@
 // Copyright (c) 2023 Yawning Angel
 //
-// SPDX-License-Identifier: SSPL-1.0
+// SPDX-License-Identifier: LGPL-2.1-only
 
 // Package db implements the libloc on-disk file format.
 package db

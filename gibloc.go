@@ -7,8 +7,10 @@
 package gibloc
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -20,7 +22,11 @@ import (
 const (
 	UnknownAS      = "<unknown Autonomous System>"
 	UnknownCountry = "<unknown country>"
+
+	xzMagicSize = 6
 )
+
+var xzMagic = []byte{0xfd, 0x37, 0x7a, 0x58, 0x5a, 0x00}
 
 // Flag expresses flags containing supplementary information about a
 // network.
@@ -200,7 +206,7 @@ func (d *DB) AutonomousSystem(asn uint32) string {
 	return as
 }
 
-// New creates a DB from a buffer containing the raw database.
+// New creates a DB from a buffer containing the raw (uncompressed) database.
 func New(raw []byte) (*DB, error) {
 	inner, err := db.New(raw, false)
 	if err != nil {
@@ -220,12 +226,47 @@ func New(raw []byte) (*DB, error) {
 	return d, nil
 }
 
-// LoadFile creates a DB from a file containing the database.
-func LoadFile(f string) (*DB, error) {
-	raw, err := os.ReadFile(f)
+// LoadFile creates a DB from a file containing the database.  This routine
+// is capable of handling both raw and XZ compressed files.
+func LoadFile(name string) (*DB, error) {
+	fd, err := os.Open(name)
+	if err != nil {
+		return nil, fmt.Errorf("gibloc: failed to open db: %w", err)
+	}
+	defer fd.Close()
+
+	// Peek at the file to see if it is xz compressed.
+	isXZ, err := isXZCompressed(fd)
+	if err != nil {
+		return nil, err
+	}
+
+	rd := io.Reader(fd)
+	if isXZ {
+		// Ok, initialize the streaming decompressor.
+		if rd, err = newXZDecompressReader(fd); err != nil {
+			return nil, err
+		}
+	}
+
+	raw, err := io.ReadAll(rd)
 	if err != nil {
 		return nil, fmt.Errorf("gibloc: failed to read db: %w", err)
 	}
 
 	return New(raw)
+}
+
+func isXZCompressed(fd *os.File) (bool, error) {
+	var tmp [xzMagicSize]byte
+	if _, err := fd.Read(tmp[:]); err != nil {
+		return false, fmt.Errorf("gibloc: failed to read file magic: %w", err)
+	}
+
+	isXZ := bytes.Equal(tmp[:], xzMagic)
+	if _, err := fd.Seek(0, 0); err != nil {
+		return false, fmt.Errorf("gibloc: failed to seek to beginning of file: %w", err)
+	}
+
+	return isXZ, nil
 }

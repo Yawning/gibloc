@@ -5,7 +5,9 @@
 package gibloc
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+	"github.com/ulikunitz/xz"
 
 	"gitlab.com/yawning/gibloc/internal/db"
 )
@@ -76,7 +79,8 @@ func TestGibloc(t *testing.T) {
 }
 
 func testGiblocUpdater(t *testing.T) {
-	// Note: These tests requires networking.
+	// Note: These tests requires networking, and GetLatestDBVersion is
+	// somewhat flaky due to DNS timeouts.
 	t.Run("GetLatestDBVersion", func(t *testing.T) {
 		if !runNetworkTests() {
 			t.Skip("skipping DNS lookup version test")
@@ -90,7 +94,7 @@ func testGiblocUpdater(t *testing.T) {
 
 		t.Logf("Latest version: %v", version)
 	})
-	t.Run("GetLatestDB", func(t *testing.T) {
+	t.Run("GetLatestDB/File", func(t *testing.T) {
 		if !runNetworkTests() {
 			t.Skip("skipping database download test")
 		}
@@ -118,6 +122,29 @@ func testGiblocUpdater(t *testing.T) {
 		require.NoError(t, err, "GetLatestDB")
 		require.NotNil(t, db, "GetLatestDB - have a database")
 	})
+	t.Run("GetLatestDB/Memory", func(t *testing.T) {
+		if !runNetworkTests() {
+			t.Skip("skipping database download test")
+		}
+
+		ctx, cancelFn := context.WithTimeout(context.Background(), 5*time.Minute)
+		defer cancelFn()
+
+		db, err := GetLatestDB(ctx, "", time.Time{})
+		require.NoError(t, err, "GetLatestDB")
+		require.NotNil(t, db, "GetLatestDB - have a database")
+
+		sigOk := db.SignatureValid(nil)
+		require.True(t, sigOk, "SignatureValid")
+
+		_, err = GetLatestDB(ctx, "", time.Now())
+		require.ErrorIs(t, ErrNotModified, err, "GetLatestDB - refetch")
+
+		// Ugh.  This wastes bandwidth, but the test is disabled by default.  Sorry!
+		db, err = GetLatestDB(ctx, "", time.Time{})
+		require.NoError(t, err, "GetLatestDB")
+		require.NotNil(t, db, "GetLatestDB - have a database")
+	})
 }
 
 func TestDebugDataErrors(t *testing.T) {
@@ -128,6 +155,15 @@ func TestDebugDataErrors(t *testing.T) {
 	// This is mostly so I can update the internal fixup table.
 	raw, err := os.ReadFile(getDBPath(t))
 	require.NoError(t, err, "os.ReadFile")
+
+	if bytes.HasPrefix(raw, xzMagic) {
+		rd := bytes.NewReader(raw)
+		xzr, err := xz.NewReader(rd)
+		require.NoError(t, err, "xz.NewReader")
+
+		raw, err = io.ReadAll(xzr)
+		require.NoError(t, err, "io.ReadAll")
+	}
 
 	db, err := db.New(raw, true)
 	require.NoError(t, err, "db.New")

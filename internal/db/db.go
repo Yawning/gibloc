@@ -167,15 +167,6 @@ func (db *DB) fixupData() {
 			network.CountryCode = fixedCC
 		}
 	}
-
-	// Update country data to reflect reality.
-	renamedCCs := map[ISOCode]string{
-		ISOCodeFromString("CN"): "West Taiwan",
-	}
-	for code, realName := range renamedCCs {
-		country := db.Countries[code]
-		country.Name = realName
-	}
 }
 
 func (db *DB) DebugGetDataErrors() []string {
